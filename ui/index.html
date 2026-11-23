@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <title>PT 签到助手</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./page.js"></script>
+</head>
+<body>
+<div id="pt-signin-app">
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><img src="./icon.svg" alt="" width="34" height="34"></span>
+        <span class="brand-text"><strong>PT 签到助手</strong><small>每日打卡 · 一站不落</small></span>
+      </div>
+      <div class="topbar-actions">
+        <span class="clock" id="clock"></span>
+        <button class="btn btn-ghost" id="refresh" type="button" title="刷新数据" aria-label="刷新数据">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      <!-- HERO 概览 -->
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="hero-main">
+          <div class="hero-copy">
+            <span class="eyebrow">今日打卡进度</span>
+            <h1 id="hero-title">今天，<span id="hero-done">0</span> / <span id="hero-total">0</span> 个站点已签到</h1>
+            <p class="hero-sub" id="hero-sub">添加一个 PT 站点，开启你的每日签到之旅。</p>
+            <div class="hero-chips">
+              <span class="chip"><span class="chip-dot"></span><span id="chip-enabled">0</span> 个站点启用中</span>
+              <span class="chip"><span class="chip-dot soft"></span>每天 08:00 自动签到</span>
+            </div>
+            <div class="hero-actions">
+              <button class="btn btn-primary" id="sign-all" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>
+                一键签到全部
+              </button>
+              <button class="btn btn-secondary" id="add-site" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                添加站点
+              </button>
+            </div>
+          </div>
+          <div class="ring-wrap" aria-hidden="true">
+            <svg class="ring" viewBox="0 0 200 200">
+              <defs>
+                <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#6d8bff"/><stop offset="1" stop-color="#b45cff"/>
+                </linearGradient>
+              </defs>
+              <circle class="ring-track" cx="100" cy="100" r="82"/>
+              <circle class="ring-value" id="ring-value" cx="100" cy="100" r="82"/>
+            </svg>
+            <div class="ring-center">
+              <strong id="ring-percent">0%</strong>
+              <span>今日完成</span>
+            </div>
+          </div>
+        </div>
+        <div class="stats" id="stats">
+          <div class="stat"><span class="stat-ico violet">◎</span><div><small>站点总数</small><strong id="stat-sites">0</strong></div></div>
+          <div class="stat"><span class="stat-ico green">↗</span><div><small>累计签到</small><strong id="stat-total">0</strong></div></div>
+          <div class="stat"><span class="stat-ico amber">✦</span><div><small>最长连续</small><strong id="stat-streak">0<small> 天</small></strong></div></div>
+          <div class="stat"><span class="stat-ico blue">✓</span><div><small>本月签到</small><strong id="stat-month">0</strong></div></div>
+        </div>
+      </section>
+
+      <!-- 签到日历 -->
+      <section class="panel calendar-panel" aria-labelledby="cal-title">
+        <div class="panel-head">
+          <div><h2 id="cal-title">签到日历</h2><p>最近 5 周，颜色越亮当天签到越多</p></div>
+          <div class="legend"><span>少</span><i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><span>多</span></div>
+        </div>
+        <div class="heatmap" id="heatmap"></div>
+      </section>
+
+      <!-- 站点卡片 -->
+      <section class="sites-section" aria-labelledby="sites-title">
+        <div class="section-head">
+          <div><h2 id="sites-title">我的站点</h2><p>管理站点、查看状态、随时补签</p></div>
+          <div class="head-actions">
+            <button class="btn btn-ghost btn-sm" id="bulk-cookie" type="button">批量贴 Cookie</button>
+            <span class="count-badge" id="sites-count">0</span>
+          </div>
+        </div>
+        <div class="site-grid" id="site-grid"></div>
+        <div class="empty" id="empty" hidden>
+          <div class="empty-art" aria-hidden="true">
+            <svg viewBox="0 0 160 120"><ellipse cx="80" cy="103" rx="52" ry="8" fill="currentColor" opacity=".08"/><rect x="42" y="22" width="76" height="72" rx="12" fill="currentColor" opacity=".1"/><rect x="52" y="12" width="56" height="20" rx="6" fill="currentColor" opacity=".16"/><path d="M42 44h76" stroke="currentColor" opacity=".2" stroke-width="3"/><path d="m66 70 10 10 20-24" stroke="currentColor" opacity=".35" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+          </div>
+          <h3>还没有站点</h3>
+          <p>添加你的第一个 PT 站点，就能开始自动签到了。</p>
+          <button class="btn btn-primary" id="empty-add" type="button">添加站点</button>
+        </div>
+      </section>
+
+      <!-- 最近记录 -->
+      <section class="panel timeline-panel" aria-labelledby="timeline-title">
+        <div class="panel-head"><div><h2 id="timeline-title">最近记录</h2><p>签到历史一览</p></div></div>
+        <ul class="timeline" id="timeline"></ul>
+        <p class="timeline-empty" id="timeline-empty">暂无签到记录，点「一键签到全部」开始吧。</p>
+      </section>
+
+      <!-- 设置 -->
+      <section class="panel settings-panel" aria-labelledby="settings-title">
+        <div class="panel-head"><div><h2 id="settings-title">签到设置</h2><p>通知与自动化</p></div></div>
+        <div class="settings-grid">
+          <label class="toggle-row"><span><strong>签到后发送通知</strong><small>通过宿主已配置的渠道推送结果</small></span><input type="checkbox" id="cfg-notify"><i class="toggle"></i></label>
+          <label class="toggle-row"><span><strong>仅失败时通知</strong><small>成功时不打扰，失败时提醒</small></span><input type="checkbox" id="cfg-notify-fail"><i class="toggle"></i></label>
+        </div>
+        <div class="notify-bar">
+          <button class="btn btn-secondary" id="notify-test" type="button">发送测试通知</button>
+          <button class="btn btn-ghost" id="notify-channels" type="button">检查通知渠道</button>
+          <button class="btn btn-ghost" id="ai-check" type="button">检查 AI 作答</button>
+          <span class="notify-hint" id="notify-hint">通知走宿主已配置的 Telegram / 企业微信渠道，受宿主渠道开关与静默时段约束</span>
+        </div>
+        <p class="notify-hint" id="ai-hint">答题签到会复用宿主已配置的 AI 提供商，点「检查 AI 作答」看当前是否可用。</p>
+      </section>
+
+      <!-- 图形验证码自动识别：用户自接视觉 AI -->
+      <section class="panel settings-panel" aria-labelledby="vision-title">
+        <div class="panel-head"><div><h2 id="vision-title">验证码自动识别</h2><p>自己接一个视觉模型，天空等站点的图形验证码全自动</p></div></div>
+        <div class="settings-grid">
+          <label class="toggle-row"><span><strong>启用验证码自动识别</strong><small>把站点验证码图片发给你下面填写的视觉 AI 识别，全自动提交</small></span><input type="checkbox" id="cfg-vision-enabled"><i class="toggle"></i></label>
+        </div>
+        <div class="vision-form">
+          <label class="vf-row"><span>接口地址</span><input type="text" id="cfg-vision-url" placeholder="http://127.0.0.1:8788/v1" autocomplete="off" spellcheck="false"></label>
+          <label class="vf-row"><span>API 密钥</span><input type="password" id="cfg-vision-key" placeholder="视觉 AI 接口的 key" autocomplete="new-password" spellcheck="false"></label>
+          <label class="vf-row"><span>视觉模型</span><input type="text" id="cfg-vision-model" placeholder="glm-5v-turbo" autocomplete="off" spellcheck="false"></label>
+        </div>
+        <div class="notify-bar">
+          <button class="btn btn-secondary" id="vision-save" type="button">保存设置</button>
+          <button class="btn btn-ghost" id="vision-test" type="button">测试识图</button>
+          <span class="notify-hint" id="vision-hint">只支持 OpenAI chat/completions 格式的视觉接口；地址与密钥仅存本插件私有存储，不读取宿主配置。</span>
+        </div>
+      </section>
+
+      <!-- 馒头（M-Team）到期预警：官方禁止第三方刷新 lastBrowse，改为只读监控 + 到期提醒 -->
+      <section class="panel settings-panel" aria-labelledby="keepalive-title">
+        <div class="panel-head"><div><h2 id="keepalive-title">馒头到期预警</h2><p>监控 M-Team 活跃时间，临近 40 天删号线时提醒你登录一次（官方禁止第三方代刷新，做种不算活跃）</p></div></div>
+        <div class="vision-form">
+          <label class="vf-row"><span>存取令牌</span><input type="password" id="ka-key" placeholder="M-Team 的 api_key（存取令牌）" autocomplete="new-password" spellcheck="false"></label>
+        </div>
+        <div class="notify-bar">
+          <button class="btn btn-primary" id="ka-save" type="button">保存令牌</button>
+          <button class="btn btn-secondary" id="ka-check" type="button">验证令牌</button>
+          <button class="btn btn-ghost" id="ka-run" type="button">检查活跃状态</button>
+          <span class="notify-hint" id="ka-hint">令牌仅存本插件私有存储，只发往 M-Team 官方只读接口查询账号状态；插件不刷新访问时间，临近删号线时推送提醒。</span>
+        </div>
+      </section>
+
+      <footer class="foot">站点 Cookie 仅保存在本插件私有存储，签到时只发往对应站点本身 · 不读取宿主凭据 · 不外传</footer>
+    </main>
+  </div>
+
+  <!-- 站点编辑弹层 -->
+  <div class="modal-mask" id="modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head"><h2 id="modal-title">添加站点</h2><button class="icon-btn" id="modal-close" type="button" aria-label="关闭">×</button></div>
+      <form id="site-form" class="modal-body">
+        <input type="hidden" id="f-id">
+        <input type="hidden" id="f-host-id">
+        <div class="import-zone" id="import-zone">
+          <div class="import-head"><span class="import-ico">⇩</span><div><strong>从 DIAN115 已配置站点带入</strong><small>选择后自动填好名称与地址，你只需补 Cookie</small></div></div>
+          <div class="import-row">
+            <select id="host-site-select" aria-label="选择 DIAN115 站点"><option value="">— 加载宿主站点中… —</option></select>
+            <button class="btn btn-secondary" id="host-apply" type="button">带入</button>
+          </div>
+          <p class="import-hint" id="import-hint">宿主站点列表已做凭据脱敏，拿不到 Cookie：带入后在站点卡片上补填，或用「批量贴 Cookie」一次填完所有站。</p>
+        </div>
+        <label class="field"><span>站点名称 <b>*</b></span><input id="f-name" maxlength="40" required placeholder="例如：某某 PT"></label>
+        <label class="field"><span>签到地址 <b>*</b></span><input id="f-url" type="url" required placeholder="https://example.com/attendance.php"><small>仅支持公网 https；填站点首页会自动补 /attendance.php，填了具体路径则按你填的走</small></label>
+        <div class="field-row">
+          <label class="field"><span>请求方法</span><select id="f-method"><option>GET</option><option>POST</option></select><small>NexusPHP 站点保持 GET：插件会自己找到页面上的签到按钮再提交，不用手动选 POST</small></label>
+          <label class="field switch-field"><span>启用站点</span><input type="checkbox" id="f-enabled" checked><i class="toggle"></i></label>
+        </div>
+        <label class="field"><span>Cookie（可选）</span><textarea id="f-cookie" rows="2" placeholder="从浏览器复制的该站点 Cookie；留空表示不修改"></textarea><small>只保存于本插件，签到时仅发往该站点，不会出现在日志里</small></label>
+        <label class="field"><span>User-Agent（可选）</span><input id="f-ua" maxlength="300" placeholder="与获取 Cookie 时同一浏览器，例如 Mozilla/5.0 (Windows NT 10.0; Win64; x64) ..."><small>站点按 UA 绑定会话时必填；留空使用插件内置 UA。可从浏览器 Network 面板同一请求里复制</small></label>
+        <label class="toggle-row"><span><strong>Cloudflare 兜底（一般不用开）</strong><small>只有直连被 Cloudflare 拦时才需要：让宿主渲染器过盾再判一次。宿主没配渲染器（FlareSolverr 等）时这一步必然失败，插件会自动回到直连结论，不会再让签到失败</small></span><input type="checkbox" id="f-render"><i class="toggle"></i></label>
+        <label class="field"><span>答题库（可选，留空就行）</span><textarea id="f-bank" rows="3" spellcheck="false" placeholder="想省 AI 调用时可以自己加：&#10;蜻蜓点水 = 产卵&#10;一甲子是多少年 = 60年"></textarea><small>一行一条：<b>题目关键词 = 答案</b>。留空也能签：题库没命中时交给宿主 AI 作答，答对的题会自动记进这里（下次同题不再花 token）。<b>图形验证码（HDSKY 这类）无法识别</b>，插件会在通知里给你签到页按钮，手动点一下即可。</small></label>
+        <label class="toggle-row"><span><strong>答题交给宿主 AI</strong><small>题库没命中时，把题目与选项交给宿主已配置的 AI 选答案，你不用自己维护题库。只发题目文字，不带 Cookie/账号；宿主没配 AI 时自动跳过，改为把题目发通知给你</small></span><input type="checkbox" id="f-ai" checked><i class="toggle"></i></label>
+        <label class="field"><span>成功关键词（可选）</span><input id="f-success" placeholder="签到成功,连续签到,已获得"><small>命中页面可见文字即判成功；留空也会自动识别 NexusPHP 标准回执（含英文模板与「您今天已经签到过了」）</small></label>
+        <label class="field"><span>已签关键词（可选）</span><input id="f-already" placeholder="今天已经签过,今日已签,重复签到"><small>命中即视为今日已打卡（幂等）</small></label>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" id="f-cancel" type="button">取消</button>
+          <button class="btn btn-primary" id="f-save" type="submit">保存站点</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-mask" id="bulk-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bulk-title">
+      <div class="modal-head"><h2 id="bulk-title">批量贴 Cookie</h2><button class="icon-btn" id="bulk-close" type="button" aria-label="关闭">×</button></div>
+      <div class="modal-body">
+        <label class="field"><span>每行一条：站点名或域名 = Cookie</span>
+          <textarea id="bulk-text" rows="8" spellcheck="false" placeholder="拾刻 = c_secure_uid=xxx; c_secure_pass=yyy; c_secure_ssl=zzz&#10;ptskit.org = c_secure_uid=xxx; c_secure_pass=yyy"></textarea>
+          <small>左侧写站点名或域名都行，<b>=</b> 后面整段都会当作 Cookie；匹配不到的行会原样列出来，不写库。只保存于本插件，仅发往对应站点。</small>
+        </label>
+        <div class="import-hint" id="bulk-hint">站点：—</div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" id="bulk-cancel" type="button">取消</button>
+          <button class="btn btn-primary" id="bulk-save" type="button">写入 Cookie</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-mask" id="probe-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="probe-title">
+      <div class="modal-head"><h2 id="probe-title">站点诊断</h2><button class="icon-btn" id="probe-close" type="button" aria-label="关闭">×</button></div>
+      <div class="modal-body">
+        <div id="probe-body" class="probe-body"></div>
+        <div class="modal-foot">
+          <button class="btn btn-primary" id="probe-ok" type="button">知道了</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toasts" aria-live="polite"></div>
+</div>
+</body>
+</html>
