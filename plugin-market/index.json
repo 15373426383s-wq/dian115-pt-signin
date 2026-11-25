@@ -1,40 +1,47 @@
 {
-  "schema_version": 3,
-  "repository": {
-    "id": "15373426383s-wq.dian115-pt-signin",
-    "name": "swgzy 的插件仓库",
-    "homepage": "https://github.com/15373426383s-wq/dian115-pt-signin"
-  },
-  "plugins": [
-    {
-      "id": "local.pt-signin",
-      "name": "PT 签到助手",
-      "version": "1.9.8",
-      "author": "哆啦A豆",
-      "description": "一个看板式的 PT 站点每日签到助手：多站点管理、自动签到、连续天数与签到日历。站点地址与 Cookie 全部由用户在插件页面自行填写，仅发往对应站点；答题签到交给宿主 AI 作答并自学题库，图形验证码站点会推送直达签到页的按钮。",
-      "homepage": "https://github.com/15373426383s-wq/dian115-pt-signin",
-      "changelog": "v1.9.8：包内开发者字段对齐签名昵称；无功能改动。v1.9.7：修复我堡（ourbits.club）签到显示成功但未真签；直连拿不到回执时交给宿主渲染器过盾后回读判定。",
-      "source_url": "https://github.com/15373426383s-wq/dian115-pt-signin/releases/download/v1.9.8/pt-signin-1.9.8.dian115p",
-      "sha256": "1066616d29105047cb05d4b0551725336b20d4deec55c7a0a76eacdbe3a490bc",
-      "delivery": "protected-v4",
-      "permissions": [],
-      "keywords": ["PT", "签到", "我堡", "Cloudflare"],
-      "declared_usage": {
-        "purpose": "为用户自己配置的 PT 站点执行签到：站点地址、Cookie、可选答题库均由用户在插件页面填写，只存插件私有加密 KV，签到时只把该站点的 Cookie 发往该站点本身；不读取宿主/浏览器/CookieCloud 凭据，不读取聊天与文件，不向作者或任何第三方服务器上报信息。签到目标强制为公网 HTTPS，拒绝裸 IP、内网、localhost、非标准端口与带凭据地址，跨域重定向立即终止。仅在用户为站点开启「Cloudflare 兜底」且直连被拦截时，才调用宿主渲染器打开同一签到地址并复用该站点 Cookie；页面仍有签到按钮时按页面表单/链接再提交一次（同域名同协议）。答题可交宿主自身 AI 接口，请求体只含题目与选项；图形验证码自动识别仅在用户自行填写视觉 AI 接口并开启后使用，配置只存插件加密 KV。",
-        "apis": [
-          "GET /api/pt/sites",
-          "POST /api/extensions/v3/local.pt-signin/ai/complete",
-          "GET /api/extensions/v3/local.pt-signin/ai/providers"
-        ],
-        "sites": [
-          "用户在插件页面自行填写的 PT 站点 HTTPS 域名",
-          "用户在插件页面自行填写的视觉 AI 接口地址（OpenAI chat/completions，用于验证码识图）",
-          "api.m-team.io（馒头官方 API，写死域名，仅用用户自填令牌做只读账号状态查询）"
-        ],
-        "files": [],
-        "notifications": true,
-        "risk": "单站点一次签到最坏发出六次直连请求，每次只携带该站点自己的 Cookie 并只发往该站点；提交类请求不自动重试。答题未命中本地题库时向宿主自身 AI 接口发一次纯文本请求（仅题目与选项），AI 不可用则跳过，不做兜底外发。验证码自动识别需用户自行开启并填写视觉 AI 接口，失败不提交。站点返回内容仅用于判定，不落盘原文。开启 Cloudflare 兜底且直连被拦截时占用宿主渲染器。"
-      }
-    }
-  ]
+ "schema_version": 3,
+ "repository": {
+  "id": "15373426383s-wq.dian115-pt-signin",
+  "name": "swgzy 的插件仓库",
+  "homepage": "https://github.com/15373426383s-wq/dian115-pt-signin"
+ },
+ "plugins": [
+  {
+   "id": "local.pt-signin",
+   "name": "PT 签到助手",
+   "version": "1.9.11",
+   "author": "哆啦A豆",
+   "description": "一个看板式的 PT 站点每日签到助手：多站点管理、自动签到、连续天数与签到日历。站点地址与 Cookie 全部由用户在插件页面自行填写，仅发往对应站点；答题签到交给宿主 AI 作答并自学题库，图形验证码站点会推送直达签到页的按钮。",
+   "homepage": "https://github.com/15373426383s-wq/dian115-pt-signin",
+   "changelog": "v1.9.11：学校（pt.btschool.club）这类没有 attendance.php 的站点，改查首页的请求放宽到 3 次、单次 45 秒；首页兜底失败时如实说明「签到页不存在，首页连不上」并给出可手动打开的首页地址，不再把 HTTP 404 当结论。v1.9.10：签到日历与「最近记录」并排，格子固定尺寸，不再占满一整行留大片空白。v1.9.9：修正签到日历表头错位（网格按周一开头，表头原写周日开头）。",
+   "source_url": "https://raw.githubusercontent.com/15373426383s-wq/dian115-pt-signin/911bd23252d9d2c263cd3c3c9221741b5fe54c7a/dist/pt-signin-1.9.11.dian115p",
+   "sha256": "5130493e5be050a8dfaab683d8212393ac4b0b12bdd3ad5174508103efd3b2af",
+   "delivery": "protected-v4",
+   "permissions": [],
+   "keywords": [
+    "PT",
+    "签到",
+    "我堡",
+    "Cloudflare",
+    "学校",
+    "BTSCHOOL"
+   ],
+   "declared_usage": {
+    "purpose": "为用户自己配置的 PT 站点执行签到：站点地址、Cookie、可选答题库均由用户在插件页面填写，只存插件私有加密 KV，签到时只把该站点的 Cookie 发往该站点本身；不读取宿主/浏览器/CookieCloud 凭据，不读取聊天与文件，不向作者或任何第三方服务器上报信息。签到目标强制为公网 HTTPS，拒绝裸 IP、内网、localhost、非标准端口与带凭据地址，跨域重定向立即终止。仅在用户为站点开启「Cloudflare 兜底」且直连被拦截时，才调用宿主渲染器打开同一签到地址并复用该站点 Cookie；页面仍有签到按钮时按页面表单/链接再提交一次（同域名同协议）。答题可交宿主自身 AI 接口，请求体只含题目与选项；图形验证码自动识别仅在用户自行填写视觉 AI 接口并开启后使用，配置只存插件加密 KV。",
+    "apis": [
+     "GET /api/pt/sites",
+     "POST /api/extensions/v3/local.pt-signin/ai/complete",
+     "GET /api/extensions/v3/local.pt-signin/ai/providers"
+    ],
+    "sites": [
+     "用户在插件页面自行填写的 PT 站点 HTTPS 域名",
+     "用户在插件页面自行填写的视觉 AI 接口地址（OpenAI chat/completions，用于验证码识图）",
+     "api.m-team.io（馒头官方 API，写死域名，仅用用户自填令牌做只读账号状态查询）"
+    ],
+    "files": [],
+    "notifications": true,
+    "risk": "单站点一次签到最坏发出六次直连请求，每次只携带该站点自己的 Cookie 并只发往该站点；提交类请求不自动重试。答题未命中本地题库时向宿主自身 AI 接口发一次纯文本请求（仅题目与选项），AI 不可用则跳过，不做兜底外发。验证码自动识别需用户自行开启并填写视觉 AI 接口，失败不提交。站点返回内容仅用于判定，不落盘原文。开启 Cloudflare 兜底且直连被拦截时占用宿主渲染器。"
+   }
+  }
+ ]
 }
