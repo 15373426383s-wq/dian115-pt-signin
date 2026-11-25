@@ -3,7 +3,7 @@ import {
   KEYS, PluginError, safeSiteURL, resolveSigninURL, readSites, readHistory, readConfig,
   dayKey, judge, completedDates, streakOf, visibleText, underChallenge, hasLoginForm,
   hasLoginEvidence, hasSigninEvidence, hasSignAction, findSigninAction, loginRedirected,
-  hasCaptcha, parseQuizForm, parseQuizBank, matchQuizAnswer, quizSummary, quizBankLine, pickQuizOption,
+  hasCaptcha, hasTurnstile, parseQuizForm, parseQuizBank, matchQuizAnswer, quizSummary, quizBankLine, pickQuizOption,
   signinHints, normalizeVisionAI, visionChatURL, parseCaptchaForm, isSkyCaptchaSite,
 } from './common.js'
 
@@ -230,7 +230,8 @@ async function renderPage(ctx, site, session, url) {
     try { await ctx.http.importCookies({ cookies: jar, session, replace: false }) } catch { /* 注入失败不影响后续判定 */ }
   }
   try {
-    const rendered = await ctx.http.render({ url: url.href, session, wait_seconds: 5, timeout_seconds: 60 })
+    // Turnstile 之类的人机验证要等 JS 跑完、表单自动提交，5 秒远远不够；给足 15 秒。
+    const rendered = await ctx.http.render({ url: url.href, session, wait_seconds: 15, timeout_seconds: 90 })
     return { response: { status: 200, url: rendered?.url || url.href, headers: {}, body: String(rendered?.html || '') } }
   } catch (error) {
     return { error: errorText(error) }
@@ -908,6 +909,30 @@ async function signWithFallback(ctx, site) {
       }
     } else {
       steps.push(`浏览器仿真不可用（${rendered.error}），已按直连结果判定`)
+    }
+  }
+
+  // Cloudflare Turnstile 签到：直连拿不到 JS 生成的 token，只能判 unconfirmed，
+  // 而且 Cloudflare 常把直连页替换成只剩 <head> 的过渡页，页面里根本看不到 cf-turnstile widget，
+  // 所以不能靠"页面里有没有 widget"来决定要不要渲染。
+  // 用户一旦为站点开了「浏览器仿真兜底」，只要直连没拿到完成回执(unconfirmed)，
+  // 就让宿主渲染器打开签到页——浏览器会跑过 JS 挑战、自动注入 token 并提交表单，
+  // 渲染出的 HTML 就是签到结果页。据此重判即可完成签到。
+  if (site.render && verdict.status === 'unconfirmed') {
+    const tsHint = hasTurnstile(bodyOf(page.response)) ? '（页面含 Turnstile 验证）' : ''
+    steps.push(`直连未拿到签到回执，交给浏览器仿真执行页面 JS 再判${tsHint}`)
+    const rendered = await renderPage(ctx, site, opened.session, opened.url)
+    if (rendered.response) {
+      const byRender = judge(rendered.response, site)
+      steps.push(`浏览器仿真结果：${byRender.status} · ${byRender.detail}`)
+      // 渲染器跑过挑战后站点通常回「今天已经签到过」(already) 或完成回执(success)。
+      // 只要不再是 unconfirmed，就采用渲染结论（含 already/success/failed）。
+      if (byRender.status !== 'unconfirmed') {
+        verdict = byRender
+        page = { ...page, response: rendered.response }
+      }
+    } else {
+      steps.push(`浏览器仿真不可用（${rendered.error}），站点需浏览器手动过验证`)
     }
   }
 
