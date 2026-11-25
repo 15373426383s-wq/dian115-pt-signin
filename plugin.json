@@ -2,7 +2,7 @@
   "schema_version": 3,
   "id": "local.pt-signin",
   "name": "PT 签到助手",
-  "version": "1.9.4",
+  "version": "1.9.5",
   "author": "local-dev",
   "description": "一个看板式的 PT 站点每日签到助手：多站点管理、自动签到、连续天数与签到日历。站点地址与 Cookie 全部由用户在插件页面自行填写，仅发往对应站点；答题签到交给宿主 AI 作答并自学题库，图形验证码站点会推送直达签到页的按钮。",
   "requires": { "api": "3.2" },
