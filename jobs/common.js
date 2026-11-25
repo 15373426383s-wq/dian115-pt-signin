@@ -526,6 +526,18 @@ export function hasCaptcha(html) {
   return CAPTCHA_IMG.test(source) || CAPTCHA_INPUT.test(source)
 }
 
+// Cloudflare Turnstile 签到：页面里有 cf-turnstile widget 或它的回调/脚本。
+// 这类站点点签到前必须由浏览器执行 JS 跑过人机验证、注入 cf-turnstile-response
+// 再提交表单；纯 HTTP 请求拿不到那个 token，只有宿主渲染器能过。
+// 识别出来后交给 signWithFallback 的渲染分支处理，而不是当普通按钮去点。
+const TURNSTILE_MARKERS = /cf-turnstile|turnstile\/v0\/api\.js|TurnstileCallback|cf-turnstile-response|data-sitekey/i
+
+export function hasTurnstile(html) {
+  const source = String(html || '').slice(0, MAX_HTML)
+  if (!source.trim() || hasLoginForm(source)) return false
+  return TURNSTILE_MARKERS.test(source)
+}
+
 // 从签到页解析图形验证码：图片地址、可见的 hash 字段、以及签到表单的提交目标。
 // 天空(HDSKY) 的套路：页面里 <img src="...regimage...&imagehash=xxx">，表单里
 // <input name="imagehash" value="xxx"> + <input name="imagestring">，提交到 showup.php。
@@ -692,7 +704,7 @@ export function parseQuizForm(html, pageUrl) {
       let label = ''
       if (radio.id) {
         const byFor = new RegExp(
-          '<label\\b[^>]*\\bfor\\s*=\\s*["\']?' + escapeRegExp(radio.id) + '["\']?[^>]*>([\\s\\S]{0,160}?)<\\/label\\s*>',
+          '<label\\b[^>]*\\bfor\\s*=\\s*["\']?' + escapeRegExp(radio.id) + '["\']?[^>]*>([\\s\\S]{0,160}?)</label\\s*>',
           'i',
         ).exec(inner)
         if (byFor) label = textOf(byFor[1])
