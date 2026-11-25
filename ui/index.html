@@ -73,14 +73,22 @@
         </div>
       </section>
 
-      <!-- 签到日历 -->
-      <section class="panel calendar-panel" aria-labelledby="cal-title">
-        <div class="panel-head">
-          <div><h2 id="cal-title">签到日历</h2><p>最近 5 周，颜色越亮当天签到越多</p></div>
-          <div class="legend"><span>少</span><i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><span>多</span></div>
-        </div>
-        <div class="heatmap" id="heatmap"></div>
-      </section>
+      <!-- 签到日历 + 最近记录：并排两块，日历窄、记录宽，避免整张宽卡片空一半 -->
+      <div class="split">
+        <section class="panel calendar-panel" aria-labelledby="cal-title">
+          <div class="panel-head">
+            <div><h2 id="cal-title">签到日历</h2><p>最近 5 周，颜色越亮当天签到越多</p></div>
+            <div class="legend"><span>少</span><i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><span>多</span></div>
+          </div>
+          <div class="heatmap" id="heatmap"></div>
+        </section>
+
+        <section class="panel timeline-panel" aria-labelledby="timeline-title">
+          <div class="panel-head"><div><h2 id="timeline-title">最近记录</h2><p>签到历史一览</p></div></div>
+          <ul class="timeline" id="timeline"></ul>
+          <p class="timeline-empty" id="timeline-empty">暂无签到记录，点「一键签到全部」开始吧。</p>
+        </section>
+      </div>
 
       <!-- 站点卡片 -->
       <section class="sites-section" aria-labelledby="sites-title">
@@ -100,13 +108,6 @@
           <p>添加你的第一个 PT 站点，就能开始自动签到了。</p>
           <button class="btn btn-primary" id="empty-add" type="button">添加站点</button>
         </div>
-      </section>
-
-      <!-- 最近记录 -->
-      <section class="panel timeline-panel" aria-labelledby="timeline-title">
-        <div class="panel-head"><div><h2 id="timeline-title">最近记录</h2><p>签到历史一览</p></div></div>
-        <ul class="timeline" id="timeline"></ul>
-        <p class="timeline-empty" id="timeline-empty">暂无签到记录，点「一键签到全部」开始吧。</p>
       </section>
 
       <!-- 设置 -->
