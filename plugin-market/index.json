@@ -18,7 +18,23 @@
       "sha256": "5403d518fa45007fe1e0b0d97201bc47e065396af57882fa1a5240ee586ab228",
       "delivery": "protected-v4",
       "permissions": [],
-      "keywords": ["PT", "签到", "我堡", "Cloudflare"]
+      "keywords": ["PT", "签到", "我堡", "Cloudflare"],
+      "declared_usage": {
+        "purpose": "为用户自己配置的 PT 站点执行签到：站点地址、Cookie、可选答题库均由用户在插件页面填写，只存插件私有加密 KV，签到时只把该站点的 Cookie 发往该站点本身；不读取宿主/浏览器/CookieCloud 凭据，不读取聊天与文件，不向作者或任何第三方服务器上报信息。签到目标强制为公网 HTTPS，拒绝裸 IP、内网、localhost、非标准端口与带凭据地址，跨域重定向立即终止。仅在用户为站点开启「Cloudflare 兜底」且直连被拦截时，才调用宿主渲染器打开同一签到地址并复用该站点 Cookie；页面仍有签到按钮时按页面表单/链接再提交一次（同域名同协议）。答题可交宿主自身 AI 接口，请求体只含题目与选项；图形验证码自动识别仅在用户自行填写视觉 AI 接口并开启后使用，配置只存插件加密 KV。",
+        "apis": [
+          "GET /api/pt/sites",
+          "POST /api/extensions/v3/local.pt-signin/ai/complete",
+          "GET /api/extensions/v3/local.pt-signin/ai/providers"
+        ],
+        "sites": [
+          "用户在插件页面自行填写的 PT 站点 HTTPS 域名",
+          "用户在插件页面自行填写的视觉 AI 接口地址（OpenAI chat/completions，用于验证码识图）",
+          "api.m-team.io（馒头官方 API，写死域名，仅用用户自填令牌做只读账号状态查询）"
+        ],
+        "files": [],
+        "notifications": true,
+        "risk": "单站点一次签到最坏发出六次直连请求，每次只携带该站点自己的 Cookie 并只发往该站点；提交类请求不自动重试。答题未命中本地题库时向宿主自身 AI 接口发一次纯文本请求（仅题目与选项），AI 不可用则跳过，不做兜底外发。验证码自动识别需用户自行开启并填写视觉 AI 接口，失败不提交。站点返回内容仅用于判定，不落盘原文。开启 Cloudflare 兜底且直连被拦截时占用宿主渲染器。"
+      }
     }
   ]
 }
