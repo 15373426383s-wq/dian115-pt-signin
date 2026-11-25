@@ -692,7 +692,7 @@ export function parseQuizForm(html, pageUrl) {
       let label = ''
       if (radio.id) {
         const byFor = new RegExp(
-          '<label\\b[^>]*\\bfor\\s*=\\s*["\']?' + escapeRegExp(radio.id) + '["\']?[^>]*>([\\s\\S]{0,160}?)</label\\s*>',
+          '<label\\b[^>]*\\bfor\\s*=\\s*["\']?' + escapeRegExp(radio.id) + '["\']?[^>]*>([\\s\\S]{0,160}?)<\\/label\\s*>',
           'i',
         ).exec(inner)
         if (byFor) label = textOf(byFor[1])
@@ -902,15 +902,19 @@ export function judge(response, site) {
   }
 
   const text = visibleText(raw)
+  // 用户关键词只是「页面文字命中」，不是站点回执。签到页导航、统计、说明里常含
+  // 「已签到」「连续签到」「签到成功」这类字样，此时真正的签到按钮仍摆着没点。
+  // 必须先排除这种「按钮还在」的情况，否则会报假成功、永不点击，站点那头什么都没发生。
+  const actionPending = hasSignAction(raw)
   const already = includesAny(text, site.alreadyKeywords || [])
-  if (already) return { status: 'already', detail: already }
+  if (already && !actionPending) return { status: 'already', detail: already }
 
   if (SIGNIN_NEGATIVE.test(text.replace(/\s+/g, ''))) {
     return { status: 'failed', detail: '站点返回签到失败提示' }
   }
-  if (alreadySigned(raw)) return { status: 'already', detail: '站点显示今日已签到' }
+  if (alreadySigned(raw) && !actionPending) return { status: 'already', detail: '站点显示今日已签到' }
   const success = includesAny(text, site.successKeywords || [])
-  if (success) return { status: 'success', detail: success }
+  if (success && !actionPending) return { status: 'success', detail: success }
 
   if (hasSigninEvidence(raw)) {
     const evidence = signinEvidence(raw)
