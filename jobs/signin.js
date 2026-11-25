@@ -9,6 +9,8 @@ import {
 
 const MAX_HISTORY = 400
 const REQUEST_TIMEOUT = 30
+// 首页兜底专用：首页比签到页重，慢站按 30 秒常常连不上，而它是 404 站点唯一的签到出路。
+const HOME_TIMEOUT = 45
 const RETRY_DELAY = 1200
 const DEFAULT_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 
@@ -126,14 +128,14 @@ function baseHeaders(site, url, referer, withCookie) {
 async function send(ctx, session, options, settings = {}) {
   const retry = settings.retry !== false
   const payload = {
-    timeout_seconds: REQUEST_TIMEOUT,
+    timeout_seconds: settings.timeoutSeconds || REQUEST_TIMEOUT,
     max_bytes: 4 * 1024 * 1024,
     follow_redirects: true,
     max_redirects: 5,
     ...options,
     session,
   }
-  const attempts = retry ? 2 : 1
+  const attempts = retry ? (settings.attempts || 2) : 1
   let last = null
   for (let index = 0; index < attempts; index++) {
     try {
@@ -141,14 +143,15 @@ async function send(ctx, session, options, settings = {}) {
     } catch (error) {
       last = error
       if (index + 1 < attempts && isNetworkError(error)) {
-        await sleep(RETRY_DELAY)
+        await sleep(RETRY_DELAY * (index + 1))
         continue
       }
       break
     }
   }
   if (isNetworkError(last)) {
-    throw new PluginError(`连接 ${hostOf(options.url)} 超时或中断（${errorText(last)}），已自动重试一次；请检查 NAS 到该站点的网络。`, 502)
+    const tried = attempts > 1 ? `，已自动重试 ${attempts - 1} 次` : ''
+    throw new PluginError(`连接 ${hostOf(options.url)} 超时或中断（${errorText(last)}）${tried}；请检查 NAS 到该站点的网络。`, 502)
   }
   throw new PluginError('请求站点失败：' + errorText(last), 502)
 }
@@ -836,14 +839,25 @@ async function signFromHome(ctx, site, opened, steps) {
 
   let response
   try {
+    // 首页通常比签到页重（NexusPHP 首页要查一堆列表），慢站点按默认节奏容易直接超时，
+    // 而这条路径本身就是「签到页不存在」时的唯一出路，所以单独放宽：3 次、单次 45 秒。
     response = await send(ctx, opened.session, {
       url: home.href,
       method: 'GET',
       headers: baseHeaders(site, home, undefined, opened.plan === 'head'),
-    })
+    }, { attempts: 3, timeoutSeconds: HOME_TIMEOUT })
   } catch (error) {
+    // 首页打不开不等于「站点返回 404」——把真实原因报出来，别人看历史才知道该等还是该改配置。
     steps.push('首页也打不开：' + errorText(error))
-    return null
+    return {
+      result: {
+        status: 'failed',
+        detail: `签到页不存在（${opened.verdict && opened.verdict.detail ? opened.verdict.detail : 'HTTP 404'}），改查首页时连接不上：${errorText(error)}`,
+        hints: [`站点首页连不上，签到入口在首页，所以这次没法签。`, '稍后手动重试通常就能成；若长期如此，请检查 NAS 到该站点的网络。'],
+        manualUrl: home.href,
+      },
+      steps,
+    }
   }
 
   const verdict = judge(response, site)
