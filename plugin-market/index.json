@@ -1,0 +1,24 @@
+{
+  "schema_version": 3,
+  "repository": {
+    "id": "15373426383s-wq.dian115-pt-signin",
+    "name": "swgzy 的插件仓库",
+    "homepage": "https://github.com/15373426383s-wq/dian115-pt-signin"
+  },
+  "plugins": [
+    {
+      "id": "local.pt-signin",
+      "name": "PT 签到助手",
+      "version": "1.9.7",
+      "author": "local-dev",
+      "description": "一个看板式的 PT 站点每日签到助手：多站点管理、自动签到、连续天数与签到日历。站点地址与 Cookie 全部由用户在插件页面自行填写，仅发往对应站点；答题签到交给宿主 AI 作答并自学题库，图形验证码站点会推送直达签到页的按钮。",
+      "homepage": "https://github.com/15373426383s-wq/dian115-pt-signin",
+      "changelog": "v1.9.7：修复我堡（ourbits.club）签到显示成功但未真签；直连拿不到回执时交给宿主渲染器过盾后回读判定；页面仍存在签到按钮时不再误判为已签到。",
+      "source_url": "https://raw.githubusercontent.com/15373426383s-wq/dian115-pt-signin/main/dist/pt-signin-1.9.7.dian115p",
+      "sha256": "5403d518fa45007fe1e0b0d97201bc47e065396af57882fa1a5240ee586ab228",
+      "delivery": "protected-v4",
+      "permissions": [],
+      "keywords": ["PT", "签到", "我堡", "Cloudflare"]
+    }
+  ]
+}
