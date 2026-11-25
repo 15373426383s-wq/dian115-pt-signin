@@ -112,14 +112,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .l1 { background: rgba(109,139,255,.28); }
 .l2 { background: rgba(109,139,255,.55); }
 .l3 { background: rgba(109,139,255,.9); }
-.heatmap { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; }
-.heat-cell { aspect-ratio: 1; border-radius: 7px; background: var(--bg); border: 1px solid var(--border); display: grid; place-items: center; font-size: 10px; color: var(--muted); position: relative; transition: transform .15s; }
-.heat-cell:hover { transform: scale(1.12); z-index: 2; }
+/* 紧凑版日历：与「最近记录」并排，卡片只有 280px 宽，格子按卡宽均分（约 29px），不再拉满整行 */
+.split { display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 20px; }
+.split > .panel { margin-top: 0; }
+.calendar-panel .panel-head { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+.calendar-panel .panel-head p { margin: 0; }
+.heatmap { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.heat-cell { aspect-ratio: 1; border-radius: 7px; background: var(--bg); border: 1px solid var(--border); display: grid; place-items: center; font-size: 10px; font-variant-numeric: tabular-nums; color: var(--muted); position: relative; transition: transform .15s; }
+.heat-cell:hover { transform: scale(1.15); z-index: 2; }
 .heat-cell.l1 { background: rgba(109,139,255,.28); border-color: transparent; color: var(--text); }
 .heat-cell.l2 { background: rgba(109,139,255,.55); border-color: transparent; color: #fff; }
 .heat-cell.l3 { background: linear-gradient(135deg, #6d8bff, #9b5cff); border-color: transparent; color: #fff; }
 .heat-cell.today { box-shadow: 0 0 0 2px var(--accent); }
-.heat-head { text-align: center; font-size: 10px; color: var(--muted); padding-bottom: 2px; }
+.heat-head { text-align: center; font-size: 10px; color: var(--muted); }
 
 /* ---------- 站点卡片 ---------- */
 .sites-section { margin-top: 28px; }
@@ -284,4 +289,11 @@ input:checked + .toggle::after { transform: translateX(14px); }
   .stat:nth-child(3) { border-left: 0; }
   .stat:nth-child(n+3) { border-top: 1px solid var(--border); }
   .field-row { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 780px) {
+  /* 单列时日历卡限宽，避免格子又跟着整行变胖 */
+  .split { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .split > .calendar-panel { max-width: 330px; }
+  .calendar-panel .panel-head { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 }
