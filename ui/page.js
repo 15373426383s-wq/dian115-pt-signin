@@ -199,7 +199,8 @@ function render() {
 function renderHeatmap() {
   const grid = $('heatmap')
   grid.innerHTML = ''
-  const labels = ['日', '一', '二', '三', '四', '五', '六']
+  // 网格按周一开头排（start 由 mondayOffset 计算），表头必须同序，否则整列错位。
+  const labels = ['一', '二', '三', '四', '五', '六', '日']
   labels.forEach(l => {
     const cell = document.createElement('div')
     cell.className = 'heat-head'
