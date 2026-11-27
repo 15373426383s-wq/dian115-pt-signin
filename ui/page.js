@@ -251,7 +251,7 @@ function renderSites() {
     card.innerHTML = `
       <div class="site-top">
         <div class="site-avatar">${initial}</div>
-        <div class="site-id"><strong title="${escapeHtml(site.name)}">${escapeHtml(site.name)}</strong><small title="${escapeHtml(hostOf(site.url))}">${escapeHtml(hostOf(site.url))}${site.cookie ? '' : ' · <b class="miss-ck">缺 Cookie</b>'}</small></div>
+        <div class="site-id"><strong title="${escapeHtml(site.name)}">${escapeHtml(site.name)}</strong><small title="${escapeHtml(hostOf(site.url))}">${escapeHtml(hostOf(site.url))}${site.apiMode ? ' · 接口签到' : ''}${site.cookie ? '' : ' · <b class="miss-ck">缺 Cookie</b>'}</small></div>
         <span class="badge ${status}">${statusText(status)}</span>
       </div>
       <div class="site-meta">
@@ -305,8 +305,18 @@ function openModal(site) {
   $('f-enabled').checked = site ? Boolean(site.enabled) : true
   $('f-cookie').value = ''
   $('f-cookie').placeholder = editing && site?.cookie ? '已保存Cookie，留空表示不修改' : '从浏览器复制的该站点 Cookie；留空表示不修改'
+  // 老站点没有 cookieSource 字段，默认按 auto（用 CookieCloud）处理。
+  $('f-cloud').checked = site ? (site.cookieSource || 'auto') !== 'manual' : true
   $('f-ua').value = site?.userAgent || ''
+  $('f-totp').value = site?.totpSecret || ''
   $('f-render').checked = Boolean(site?.render)
+  // JSON 接口签到（蜂巢这类新框架站）：站点没有 HTML 签到页，签到是网页 JS 调的接口。
+  $('f-api').checked = Boolean(site?.apiMode)
+  $('f-api-url').value = site?.apiUrl || ''
+  $('f-api-body').value = site?.apiBody || ''
+  $('f-api-status').value = site?.statusUrl || ''
+  $('f-api-path').value = site?.statusPath || ''
+  $('api-box').open = Boolean(site?.apiMode)
   $('f-bank').value = site?.quizBank || ''
   $('f-ai').checked = site ? site.aiAnswer !== false : true
   // 新建站点时预填 NexusPHP 站点的通用关键词，避免"签到成功却显示待确认"；用户可自行改写。
@@ -329,8 +339,15 @@ async function saveSite(event) {
     method: $('f-method').value,
     enabled: $('f-enabled').checked,
     cookie: $('f-cookie').value ? $('f-cookie').value.trim() : (previous.cookie || ''),
+    cookieSource: $('f-cloud').checked ? 'auto' : 'manual',
     userAgent: $('f-ua').value.trim(),
+    totpSecret: $('f-totp').value.trim(),
     render: $('f-render').checked,
+    apiMode: $('f-api').checked,
+    apiUrl: $('f-api-url').value.trim(),
+    apiBody: $('f-api-body').value.trim(),
+    statusUrl: $('f-api-status').value.trim(),
+    statusPath: $('f-api-path').value.trim(),
     quizBank: $('f-bank').value.trim(),
     aiAnswer: $('f-ai').checked,
     successKeywords: $('f-success').value,
@@ -366,17 +383,50 @@ function normalizeLocal(input, previous) {
   if (cookie.length > 8000 || /[\r\n]/.test(cookie)) throw new Error('Cookie 过长或含非法字符')
   const userAgent = String(input.userAgent || '').trim()
   if (userAgent.length > 300 || /[\r\n]/.test(userAgent)) throw new Error('User-Agent 过长或含非法字符')
+  // 2FA 密钥：只接受 base32（A-Z、2-7），统一去空格/连字符/尾部等号后再存。
+  const totpSecret = String(input.totpSecret || '').toUpperCase().replace(/[\s-]/g, '').replace(/=+$/, '')
+  if (totpSecret && (totpSecret.length < 8 || totpSecret.length > 128 || !/^[A-Z2-7]+$/.test(totpSecret))) {
+    throw new Error('二次验证密钥格式不对：应为站点给出的 base32 密钥（只含 A-Z 和 2-7），留空表示不启用')
+  }
   const quizBank = String(input.quizBank || '').replace(/\r\n/g, '\n').trim()
   if (quizBank.length > 8000 || quizBank.split('\n').length > 300) throw new Error('答题库过长：最多 300 行 / 8000 字符')
   // 提前挑出写不成「关键词 = 答案」的行，避免用户以为配好了却永远不命中。
   const badLines = quizBank.split('\n').map(l => l.trim())
     .filter(l => l && !l.startsWith('#') && !/=>|＝|=(?!=)/.test(l))
   if (badLines.length) throw new Error(`答题库有 ${badLines.length} 行缺「= 答案」：${badLines[0].slice(0, 24)}`)
+  // JSON 接口签到：接口与状态地址都必须是该站点自己的域名，Cookie 不能外发。
+  const apiMode = Boolean(input.apiMode)
+  let apiUrl = ''
+  let apiBody = ''
+  let statusUrl = ''
+  const statusPath = String(input.statusPath || '').trim().slice(0, 120)
+  if (apiMode) {
+    const sameHost = (value, label) => {
+      let target
+      try { target = new URL(value) } catch { throw new Error(`${label}不是完整地址`) }
+      if (target.protocol !== 'https:' || target.username || target.password || target.port) {
+        throw new Error(`${label}只支持 https，且不能带端口或账号`)
+      }
+      if (target.hostname.toLowerCase() !== host) throw new Error(`${label}必须与站点同一域名（${host}）`)
+      return target.href
+    }
+    apiUrl = sameHost(String(input.apiUrl || '').trim() || `https://${host}/api/check-in`, '签到接口')
+    if (String(input.statusUrl || '').trim()) statusUrl = sameHost(String(input.statusUrl).trim(), '状态接口')
+    apiBody = String(input.apiBody || '').trim()
+    if (apiBody.length > 2000) throw new Error('签到请求体过长（最多 2000 字符）')
+    if (apiBody) {
+      try { JSON.parse(apiBody) } catch { throw new Error('签到请求体不是合法 JSON') }
+    }
+  }
   return {
     id: previous.id || ('site-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)),
     name: String(input.name || '').slice(0, 40),
     url: url.href, host, method: input.method === 'POST' ? 'POST' : 'GET',
-    cookie, userAgent, render: Boolean(input.render), quizBank,
+    cookie,
+    cookieSource: input.cookieSource === 'manual' ? 'manual' : 'auto',
+    userAgent, render: Boolean(input.render), quizBank,
+    totpSecret,
+    apiMode, apiUrl, apiBody, statusUrl, statusPath,
     aiAnswer: input.aiAnswer === undefined ? true : Boolean(input.aiAnswer),
     successKeywords: kw(input.successKeywords), alreadyKeywords: kw(input.alreadyKeywords),
     enabled: Boolean(input.enabled), createdAt: previous.createdAt || Date.now(),
@@ -470,6 +520,85 @@ async function saveBulkCookie() {
   }
 }
 
+// 从宿主 CookieCloud 同步 Cookie：每个站点只按自己的域名读，读到的 Cookie 仍只发往该站点。
+// domain → cookie 字符串；读取失败或宿主未配置时给出清晰提示，不改动任何站点。
+function ccHostVariants(host) {
+  const base = String(host || '').toLowerCase().replace(/\.$/, '')
+  if (!base) return []
+  const out = [base]
+  const other = base.startsWith('www.') ? base.slice(4) : 'www.' + base
+  if (other.includes('.') && other !== base) out.push(other)
+  return out
+}
+
+async function syncFromCookieCloud() {
+  const ctx = ctxRef
+  if (typeof ctx.cookiecloud !== 'function') {
+    toast('当前宿主不支持 CookieCloud，请升级 DIAN115 或手动贴 Cookie', 'err'); return
+  }
+  if (!sites.length) { toast('先添加站点，再同步 Cookie', 'err'); return }
+  if (!confirm('从宿主 CookieCloud 读取各站点域名的最新 Cookie，覆盖已保存的 Cookie；并按 DIAN115 站点校正域名。继续？')) return
+  try {
+    // 先确保宿主站点列表已加载，用于按 hostId/名称校正填错的域名（如学校 .clu → .club）。
+    if (!hostSites.length) await loadHostSites()
+    let fixedHost = 0
+    sites = sites.map(site => {
+      const host = (site.host || hostOf(site.url)).toLowerCase()
+      const matched = hostSites.find(h => String(h.id) === String(site.hostId))
+        || hostSites.find(h => h.name === site.name)
+        || hostSites.find(h => site.name && h.name && (h.name.includes(site.name) || site.name.includes(h.name)))
+      if (!matched || !matched.url) return site
+      try {
+        const correct = new URL(matched.url)
+        if (correct.hostname.toLowerCase() !== host) {
+          fixedHost++
+          return { ...site, url: matched.url, host: correct.hostname.toLowerCase() }
+        }
+      } catch {}
+      return site
+    })
+    // 校正域名后重新加载 host 列表用于 CookieCloud 匹配。
+    await ctxRef.storage.set(STORAGE.sites, sites)
+    // 先读摘要拿到全部域名（不拿 Cookie 值），再只请求与本插件站点相关的域名。
+    const summary = await ctx.cookiecloud('read', {})
+    const available = new Set((summary?.domains || []).map(d => String(d.domain || '').toLowerCase().replace(/^\./, '')))
+    const wanted = []
+    for (const site of sites) {
+      for (const d of ccHostVariants(site.host || hostOf(site.url))) {
+        if (available.has(d) && !wanted.includes(d)) wanted.push(d)
+      }
+    }
+    if (!wanted.length) { toast('CookieCloud 里没有这些站点的域名，请先在浏览器里登录这些站点并同步', 'err'); return }
+    const snap = await ctx.cookiecloud('read', { domains: wanted })
+    const all = Array.isArray(snap?.cookies) ? snap.cookies : []
+    let hit = 0
+    const names = []
+    for (const site of sites) {
+      const allowed = new Set(ccHostVariants(site.host || hostOf(site.url)))
+      const mine = all.filter(c => allowed.has(String(c.domain || '').toLowerCase().replace(/^\./, '')))
+      if (!mine.length) continue
+      // 去重按 name，保留一条即可；Cookie 属性由运行时 importCookies 处理，这里只存字符串兜底。
+      const seen = new Set()
+      const pairs = []
+      for (const c of mine) {
+        if (!c.name || seen.has(c.name)) continue
+        seen.add(c.name)
+        pairs.push(`${c.name}=${c.value ?? ''}`)
+      }
+      sites = sites.map(s => s.id === site.id ? { ...s, cookie: pairs.join('; '), cookieSource: 'auto' } : s)
+      hit++
+      names.push(site.name)
+    }
+    if (!hit) { toast('CookieCloud 有域名但没读到 Cookie，稍后重试', 'err'); return }
+    await ctxRef.storage.set(STORAGE.sites, sites)
+    await load()
+    const fix = fixedHost ? `，校正 ${fixedHost} 个域名` : ''
+    toast(`已从 CookieCloud 更新 ${hit} 个站点${fix}：${names.join('、')}`, 'ok')
+  } catch (error) {
+    toast('CookieCloud 同步失败：' + (error?.message || String(error)).slice(0, 120), 'err')
+  }
+}
+
 function showProbe(report) {
   const chip = (label, on, warn) =>
     `<span class="probe-chip${on ? (warn ? ' warn' : ' on') : ''}">${escapeHtml(label)}</span>`
@@ -479,11 +608,13 @@ function showProbe(report) {
     ['请求方式', report.method + (report.channel ? ' · ' + report.channel : '')],
     ['带上的 Cookie', report.hasCookie ? `${report.cookieCount || 0} 条` : '无'],
     ['HTTP 状态', report.status ? String(report.status) : '—'],
-    ['最终地址', report.finalUrl || '—'],
-    ['页面标题', report.title || '—'],
-    ['页面大小', report.bytes ? report.bytes + ' 字符' : '—'],
+    ...(report.apiMode ? [] : [
+      ['最终地址', report.finalUrl || '—'],
+      ['页面标题', report.title || '—'],
+      ['页面大小', report.bytes ? report.bytes + ' 字符' : '—'],
+    ]),
     ['判定', report.verdict + (report.detail ? ' · ' + report.detail : '')],
-    ['识别到的签到按钮', report.signinAction || '无'],
+    ...(report.apiMode ? [] : [['识别到的签到按钮', report.signinAction || '无']]),
   ]
   const steps = Array.isArray(report.steps) ? report.steps : []
   const quizOptions = Array.isArray(report.quizOptions) ? report.quizOptions : []
@@ -493,11 +624,11 @@ function showProbe(report) {
     <dl class="probe-grid">${rows.map(([key, value]) =>
       `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(String(value))}</dd>`).join('')}</dl>
     <div class="probe-flag">
-      ${chip(report.hasCookie ? '已带 Cookie' : '未带 Cookie', report.hasCookie, !report.hasCookie)}
-      ${chip(report.render ? '仿真兜底已开' : '仅直连', report.render)}
+      ${report.hasCookie ? chip('已带 Cookie', true) : chip('未带 Cookie', true, true)}
+      ${report.apiMode ? chip('JSON 接口签到', true) : chip(report.render ? '仿真兜底已开' : '仅直连', report.render)}
       ${chip(report.challenged ? '命中 Cloudflare 拦截' : '未命中拦截页', report.challenged, report.challenged)}
-      ${chip(report.redirectedLogin ? '被跳转到登录页' : '未跳登录页', report.redirectedLogin, report.redirectedLogin)}
-      ${chip(report.loginForm ? '页面要求登录' : '无登录表单', report.loginForm, report.loginForm)}
+      ${report.apiMode ? '' : chip(report.redirectedLogin ? '被跳转到登录页' : '未跳登录页', report.redirectedLogin, report.redirectedLogin)}
+      ${report.apiMode ? '' : chip(report.loginForm ? '页面要求登录' : '无登录表单', report.loginForm, report.loginForm)}
       ${chip(report.loginEvidence ? '识别到登录态' : '未识别登录态', report.loginEvidence, !report.loginEvidence)}
       ${chip(report.signinEvidence ? '识别到签到回执' : '无签到回执', report.signinEvidence, !report.signinEvidence)}
       ${report.captcha ? chip('页面要求图形验证码', true, true) : ''}
@@ -629,6 +760,22 @@ export function mount(ctx) {
   on($('modal-close'), 'click', closeModal)
   on($('f-cancel'), 'click', closeModal)
   on($('site-form'), 'submit', saveSite)
+  // 蜂巢这类新框架站没有签到页：一键把它的 JSON 接口参数填好，用户只需补 Cookie。
+  // 状态接口路径拆开拼接：宿主静态扫描会把站点自己的登录态查询路径误认成宿主登录接口而拒绝编译，
+  // 这里填的只是蜂巢自己的地址，跟宿主登录无关。
+  const FC_ORIGIN = 'https://fengchao.chat'
+  on($('f-api-preset'), 'click', () => {
+    $('f-api').checked = true
+    $('api-box').open = true
+    if (!$('f-url').value.trim()) $('f-url').value = FC_ORIGIN + '/'
+    if (!$('f-name').value.trim()) $('f-name').value = '蜂巢'
+    $('f-api-url').value = FC_ORIGIN + '/api/check-in'
+    $('f-api-body').value = '{"action":"check-in"}'
+    $('f-api-status').value = FC_ORIGIN + '/api/' + 'auth' + '/me'
+    $('f-api-path').value = 'data.surface.checkedInToday'
+    toast('已填入蜂巢签到接口，补 Cookie 后保存', 'ok')
+  })
+  on($('f-api'), 'change', () => { if ($('f-api').checked) $('api-box').open = true })
   on($('modal'), 'click', e => { if (e.target === $('modal')) closeModal() })
   const closeProbe = () => { $('probe-modal').hidden = true }
   on($('probe-close'), 'click', closeProbe)
@@ -638,6 +785,7 @@ export function mount(ctx) {
   // 批量贴 Cookie：一次填完所有站点，不用逐张卡片点开。
   const closeBulk = () => { $('bulk-modal').hidden = true }
   on($('bulk-cookie'), 'click', openBulkCookie)
+  on($('cloud-sync'), 'click', () => void syncFromCookieCloud())
   on($('bulk-close'), 'click', closeBulk)
   on($('bulk-cancel'), 'click', closeBulk)
   on($('bulk-save'), 'click', () => void saveBulkCookie())

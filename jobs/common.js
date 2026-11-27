@@ -129,14 +129,38 @@ export function normalizeSite(input, previous = {}) {
   const id = typeof previous.id === 'string' && previous.id
     ? previous.id
     : 'site-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
+  // JSON 接口签到：签到不是页面表单，而是网页 JS 调的一个 JSON 接口。
+  // 接口地址与状态地址都必须是该站点自己的域名，否则拒绝保存（Cookie 不能外发）。
+  const apiMode = Boolean(input.apiMode)
+  const host = url.hostname.toLowerCase().replace(/\.$/, '')
+  const sameHost = value => {
+    const target = safeSiteURL(String(value || '').trim())
+    if (target.hostname.toLowerCase().replace(/\.$/, '') !== host) {
+      throw new PluginError('JSON 签到接口必须与站点同一域名。')
+    }
+    return target.href
+  }
+  const apiUrl = apiMode && input.apiUrl ? sameHost(input.apiUrl) : (apiMode ? url.origin + '/api/check-in' : '')
+  const statusUrl = apiMode && input.statusUrl ? sameHost(input.statusUrl) : ''
+  const apiBody = String(input.apiBody ?? '').trim()
+  if (apiMode) {
+    if (apiBody.length > 2000) throw new PluginError('签到请求体过长（最多 2000 字符）。')
+    if (apiBody && !parseJsonBody(apiBody)) throw new PluginError('签到请求体必须是合法 JSON。')
+  }
   return {
     id,
     name,
     url: url.href,
-    host: url.hostname.toLowerCase().replace(/\.$/, ''),
+    host,
     method,
     cookie,
     userAgent,
+    // JSON 接口签到（蜂巢这类新框架站）：按接口返回判，不走 HTML 页面判定。
+    apiMode,
+    apiUrl,
+    apiBody: apiMode ? apiBody : '',
+    statusUrl,
+    statusPath: apiMode ? String(input.statusPath ?? '').trim().slice(0, 120) : '',
     // 浏览器仿真：Cloudflare/WAF 站点的直连请求会被拦，改用宿主渲染器带 Cookie 打开页面。
     render: Boolean(input.render),
     // 图形验证码半自动：插件取验证码图显示在页面，用户填码后插件提交（不 OCR、不外发）。
@@ -149,6 +173,63 @@ export function normalizeSite(input, previous = {}) {
     enabled: input.enabled === undefined ? true : Boolean(input.enabled),
     createdAt: previous.createdAt || Date.now(),
   }
+}
+
+// ===== CookieCloud 对接 =====
+// 宿主「内置插件 → CookieCloud 服务器」保存了用户浏览器同步过来的站点 Cookie。
+// 插件只按站点自己的域名读取，绝不读其它域，读到的 Cookie 仍只发往该站点本身。
+// 用能力探测而非写死版本号：有 ctx.cookiecloud 方法就支持。旧宿主没有这个方法时返回 false，
+// 签到自动回退到用户手填的 Cookie，不阻断。
+export function supportsCookieCloud(ctx) {
+  return typeof ctx?.cookiecloud === 'function'
+}
+
+// host 变体：站点可能记 ptskit.org、浏览器存的却是 www.ptskit.org（或反之），两个都读。
+function cloudDomains(site) {
+  const host = String(site?.host || '').toLowerCase().replace(/\.$/, '')
+  if (!host) return []
+  const list = [host]
+  const other = host.startsWith('www.') ? host.slice(4) : 'www.' + host
+  if (other.includes('.') && other !== host) list.push(other)
+  return list
+}
+
+// 从 CookieCloud 读某个站点的 Cookie 对象数组（保留 Path/HttpOnly/Secure 属性）。
+// 只取属于该站点宿主（含 www 变体）的 Cookie；读不到或宿主不支持时返回 []，绝不抛错。
+export async function readCloudCookies(ctx, site) {
+  if (!supportsCookieCloud(ctx)) return []
+  const domains = cloudDomains(site)
+  if (!domains.length) return []
+  try {
+    const snapshot = await ctx.cookiecloud('read', { domains })
+    const cookies = Array.isArray(snapshot?.cookies) ? snapshot.cookies : []
+    const allowed = new Set(domains)
+    return cookies.filter(item => {
+      if (!item || !item.name) return false
+      const domain = String(item.domain || '').toLowerCase().replace(/^\./, '').replace(/\.$/, '')
+      return allowed.has(domain)
+    }).map(item => ({
+      name: String(item.name),
+      value: String(item.value ?? ''),
+      domain: String(item.domain || domains[0]).replace(/^\./, ''),
+      path: String(item.path || '/'),
+      host_only: Boolean(item.host_only),
+      secure: Boolean(item.secure),
+      http_only: Boolean(item.http_only),
+      ...(item.same_site ? { same_site: item.same_site } : {}),
+      ...(Number.isFinite(item.expires_at) ? { expires_at: item.expires_at } : {}),
+    }))
+  } catch {
+    return []
+  }
+}
+
+// CookieCloud 的 Cookie 对象转成「name=value; ...」字符串，供明文头通道与界面预览使用。
+export function cookiesToString(cookies) {
+  return (Array.isArray(cookies) ? cookies : [])
+    .filter(item => item && item.name)
+    .map(item => `${item.name}=${item.value ?? ''}`)
+    .join('; ')
 }
 
 export async function readSites(ctx) {
@@ -181,9 +262,27 @@ export function dayKey(timestamp = Date.now()) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
+// 用户关键词必须是「陈述句」，不能出自规则/奖励说明段落。
+// 例：我堡签到页写着「连续签到 10 天后，每次签到额外获得 5 魔力值」，
+// 命中「连续签到」就会被当成签到成功，而实际上那个页面还在等人机验证。
+const RULE_CONTEXT = /(?:额外|額外|规则|規則|说明|說明|封顶|封頂|累积|累積|天后|可获得|可獲得|算作|视为|視為|不等|奖励说明)/
 function includesAny(text, keywords) {
   const lower = text.toLowerCase()
-  return keywords.find(word => word && lower.includes(String(word).toLowerCase())) || null
+  for (const word of keywords) {
+    if (!word) continue
+    const needle = String(word).toLowerCase()
+    let at = lower.indexOf(needle)
+    if (at < 0) continue
+    // 同一关键词可能多处出现，任意一处落在陈述句里就算命中。
+    let ok = false
+    while (at >= 0) {
+      const sentence = text.slice(Math.max(0, at - 30), at + needle.length + 30)
+      if (!RULE_CONTEXT.test(sentence)) { ok = true; break }
+      at = lower.indexOf(needle, at + needle.length)
+    }
+    if (ok) return word
+  }
+  return null
 }
 
 function safeChar(code) {
@@ -385,10 +484,31 @@ function isSigninLabel(value) {
 }
 
 // 页面是否仍摆着「签到」按钮：有则说明签到动作还没完成（GET 没生效或需要 POST）。
-export function hasSignAction(html) {
-  return elementLabels(html).some(item =>
-    (item.tag === 'input' || item.tag === 'button' || item.tag === 'a')
-    && isSigninLabel(item.label))
+export function hasSignAction(html, pageUrl) {
+  // 导航栏里指向「签到页自己」的入口（典型如 NexusPHP 顶部「每日签到」→ 当前页）是导航，不是待点的动作。
+  // 把它当成「按钮还在」会让已经签完的页面永远判不出完成——彩虹岛的 bakatest 就是这样被卡成待确认的。
+  let selfPath = ''
+  try {
+    const base = pageUrl ? new URL(String(pageUrl)) : null
+    selfPath = base ? base.pathname.replace(/\/+$/, '') || '/' : ''
+  } catch { selfPath = '' }
+
+  return elementLabels(html).some(item => {
+    if (!(item.tag === 'input' || item.tag === 'button' || item.tag === 'a')) return false
+    if (!isSigninLabel(item.label)) return false
+    // 表单按钮不看 href：只要页面上真的有提交按钮，就仍然算「等用户操作」。
+    if (item.tag === 'a' && selfPath) {
+      const href = attrValue(item.attrs, 'href')
+      if (href) {
+        try {
+          const target = new URL(href, pageUrl)
+          const path = target.pathname.replace(/\/+$/, '') || '/'
+          if (path === selfPath) return false
+        } catch { /* 解析不了就保持原判定 */ }
+      }
+    }
+    return true
+  })
 }
 
 // 从页面里找出真正的「签到按钮」，模拟人点一下：可能是表单提交，也可能是一个带参数的链接。
@@ -403,6 +523,14 @@ export function findSigninAction(html, pageUrl) {
       return url.href
     } catch { return null }
   }
+  // 指向当前页自身的「每日签到」导航不是动作：点了只会重新加载同一页。
+  const samePath = href => {
+    try {
+      const path = new URL(href).pathname.replace(/\/+$/, '') || '/'
+      const self = new URL(pageUrl).pathname.replace(/\/+$/, '') || '/'
+      return path === self
+    } catch { return false }
+  }
   let match
 
   // 1) 链接式签到：<a href="attendance.php?action=sign">签到</a>
@@ -411,7 +539,7 @@ export function findSigninAction(html, pageUrl) {
     const label = decodeEntities(String(match[2]).replace(/<[^>]*>/g, '')).replace(/\s+/g, '').trim()
     if (!isAction(label)) continue
     const url = sameSite(attrValue(match[1], 'href'))
-    if (url) return { kind: 'link', url, method: 'GET', fields: [], label }
+    if (url && !samePath(url)) return { kind: 'link', url, method: 'GET', fields: [], label }
   }
 
   // 2) 表单式签到：连同隐藏字段（formhash / CSRF token）一起提交，等价于点击按钮。
@@ -538,6 +666,129 @@ export function hasTurnstile(html) {
   return TURNSTILE_MARKERS.test(source)
 }
 
+// 二次验证（2FA/TOTP）拦截页：NexusPHP 在未完成两步验证时，会把任何请求都替换成
+// 「提交 6 位动态码」的表单——form action 指向 take2fa.php，字段名是 2fa。
+// 不先过这一步，签到页永远打不开。识别出来后由 signin.js 用站点自己的
+// TOTP 密钥算码并提交，密钥只在本机参与 HMAC，不外发、不进日志。
+const TWO_FACTOR_MARKERS = /take2fa\.php|<input\b[^>]*\bname\s*=\s*["']?2fa["'\s>]/i
+
+export function hasTwoFactor(html) {
+  const source = String(html || '').slice(0, MAX_HTML)
+  if (!source.trim()) return false
+  // 有些站点（如 UHDDolby）把动态码输入框直接做进登录表单：
+  // <form action="takelogin.php"> 里同时有 password 与 2fa 两个输入框。
+  // 那是「登录页需要 2FA」，不是「已登录但被 take2fa.php 拦下」，判成后者会去
+  // 提交一个根本没有会话承载的动态码，再把失败原因说成密钥不对——所以先排除登录表单。
+  if (hasLoginForm(source)) return false
+  return TWO_FACTOR_MARKERS.test(source)
+}
+
+// 登录表单里是否自带动态码输入框（说明该站登录必须过 2FA）。
+// 用于把「Cookie 失效，需要重新登录（登录本身要 2FA）」讲清楚，
+// 而不是笼统报「Cookie 已失效」或误报成站内二次验证拦截。
+export function loginNeedsTwoFactor(html) {
+  const source = String(html || '').slice(0, MAX_HTML)
+  if (!source.trim()) return false
+  return hasLoginForm(source) && TWO_FACTOR_MARKERS.test(source)
+}
+
+// 取出 2FA 表单的提交地址与随表单提交的普通字段。
+// NexusPHP 的 take2fa.php 除了动态码，还要 type=save 与 returnto 两个隐藏域，
+// 少一个就会被判无效；所以这里把表单里的非提交按钮字段整体带上。
+// 只接受与页面同站点的提交目标，跨域一律丢弃。
+export function parseTwoFactorForm(html, pageUrl) {
+  const source = String(html || '').slice(0, MAX_HTML)
+  if (!source.trim()) return null
+  const formRe = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi
+  let match
+  while ((match = formRe.exec(source))) {
+    const inner = match[2]
+    if (!/name\s*=\s*["']?2fa["'\s>]/i.test(inner)) continue
+    const action = attrValue(match[1], 'action') || 'take2fa.php'
+    const abs = sameSiteHref(action, pageUrl)
+    if (!abs) continue
+    const fields = []
+    const inputRe = /<input\b([^>]*)>/gi
+    let input
+    while ((input = inputRe.exec(inner))) {
+      const attrs = input[1]
+      const type = String(attrValue(attrs, 'type') || 'text').toLowerCase()
+      if (type === 'submit' || type === 'button' || type === 'image' || type === 'file' || type === 'reset') continue
+      const name = attrValue(attrs, 'name')
+      if (!name || name === '2fa') continue
+      fields.push({ name, value: attrValue(attrs, 'value') })
+    }
+    return { action: abs, fields }
+  }
+  // 没有可解析的 <form> 但页面明显是 2FA 页时，退回 NexusPHP 的固定提交地址与固定字段。
+  if (TWO_FACTOR_MARKERS.test(source)) {
+    const abs = sameSiteHref('take2fa.php', pageUrl)
+    if (abs) return { action: abs, fields: [] }
+  }
+  return null
+}
+
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+
+// 归一化用户填的 TOTP 密钥：去掉空格/连字符/尾部等号，统一大写。
+export function normalizeTotpSecret(raw) {
+  return String(raw || '').toUpperCase().replace(/[\s-]/g, '').replace(/=+$/, '')
+}
+
+export function isValidTotpSecret(raw) {
+  const key = normalizeTotpSecret(raw)
+  if (key.length < 8) return false
+  for (const ch of key) if (!BASE32_ALPHABET.includes(ch)) return false
+  return true
+}
+
+function base32Decode(key) {
+  const out = []
+  let value = 0
+  let bits = 0
+  for (const ch of key) {
+    const index = BASE32_ALPHABET.indexOf(ch)
+    if (index < 0) return null
+    value = ((value << 5) | index) & 0xffff
+    bits += 5
+    if (bits >= 8) {
+      bits -= 8
+      out.push((value >>> bits) & 0xff)
+      value &= (1 << bits) - 1
+    }
+  }
+  return out.length ? Uint8Array.from(out) : null
+}
+
+// 按 RFC 6238 生成动态码（默认 6 位 / 30 秒）。密钥是用户自己在站点绑定的
+// base32 secret，只在本机参与 HMAC-SHA1，算出的码只发往该站点。
+export function totpCode(ctx, secret, options = {}) {
+  const key = normalizeTotpSecret(secret)
+  if (!key) return ''
+  const bytes = base32Decode(key)
+  if (!bytes) return ''
+  const digits = Number(options.digits) || 6
+  const period = Number(options.period) || 30
+  const counter = Math.floor((Number(options.at) || Date.now()) / 1000 / period)
+
+  const message = new Uint8Array(8)
+  let rest = counter
+  for (let i = 7; i >= 0; i -= 1) {
+    message[i] = rest & 0xff
+    rest = Math.floor(rest / 256)
+  }
+
+  const mac = ctx.crypto.hmac('sha1', bytes, message, 'bytes')
+  const hash = mac instanceof Uint8Array ? mac : Uint8Array.from(mac || [])
+  if (hash.length < 20) return ''
+  const offset = hash[hash.length - 1] & 0x0f
+  const binary = ((hash[offset] & 0x7f) << 24)
+    | ((hash[offset + 1] & 0xff) << 16)
+    | ((hash[offset + 2] & 0xff) << 8)
+    | (hash[offset + 3] & 0xff)
+  return String(binary % (10 ** digits)).padStart(digits, '0')
+}
+
 // 从签到页解析图形验证码：图片地址、可见的 hash 字段、以及签到表单的提交目标。
 // 天空(HDSKY) 的套路：页面里 <img src="...regimage...&imagehash=xxx">，表单里
 // <input name="imagehash" value="xxx"> + <input name="imagestring">，提交到 showup.php。
@@ -646,6 +897,17 @@ function sameSiteHref(href, pageUrl) {
   } catch { return null }
 }
 
+// 题干图可能挂在站点自己的图床/CDN 域名上（不是页面同域），
+// 取图只读这张公开图片、不带任何 Cookie，所以这里不做同域限制。
+function anySiteHref(href, pageUrl) {
+  try {
+    const url = new URL(String(href || '').trim(), pageUrl)
+    if (!/^https?:$/.test(url.protocol)) return null
+    url.hash = ''
+    return url.href
+  } catch { return null }
+}
+
 // 解析答题签到页：找出题目、选项（同一 radio name 且 ≥2 个）、隐藏字段与提交目标。
 // 只认「多选题组 + 提交按钮」这种结构，普通签到表单不会被误认。
 export function parseQuizForm(html, pageUrl) {
@@ -735,16 +997,121 @@ export function parseQuizForm(html, pageUrl) {
     const url = sameSiteHref(attrValue(formAttrs, 'action') || pageUrl, pageUrl)
     if (!url) continue
     const method = (attrValue(formAttrs, 'method') || '').toUpperCase() === 'GET' ? 'GET' : 'POST'
+    // 有些站点的题目是「看图认人/认物」：题干就是一张图，旁边才是文字选项。
+    // 只把文字喂给 AI 的话它只能回 UNKNOWN，所以这里把题干图片地址也取出来。
+    const image = (() => {
+      // 先看表单内选项之前的图片；找不到再往表单上方的区块找（题干图常摆在表单外面）。
+      const zones = [inner.slice(0, picked[0].start), source.slice(Math.max(0, form.index - 3000), form.index)]
+      for (const zone of zones) {
+        const imgRe = /<img\b([^>]*)>/gi
+        let img
+        let found = ''
+        while ((img = imgRe.exec(zone))) {
+          const attrs = img[1]
+          const src = attrValue(attrs, 'src') || ''
+          // 题干图可能不是 src：NexusPHP 常用 pic/trans.gif 占位，
+          // 真图放在 data-src/data-original 或 style 的 background:url(...) 里。
+          const styleBg = /url\(\s*['"]?([^'")]+)['"]?\s*\)/i.exec(attrValue(attrs, 'style') || '')
+          const real = attrValue(attrs, 'data-src') || attrValue(attrs, 'data-original') || (styleBg ? styleBg[1] : '')
+          const pick = real || src
+          if (!pick || /^data:/i.test(pick)) continue
+          // 1×1 统计像素不是题干图，跳过。
+          if (/\b(?:width|height)\s*=\s*["']?1\b/i.test(attrs)) continue
+          if (PLACEHOLDER_IMG.test(pick) || (!real && PLACEHOLDER_IMG.test(src))) continue
+          const abs = anySiteHref(pick, pageUrl)
+          if (abs) found = abs
+        }
+        if (found) return found
+        // 老式 NexusPHP 皮肤爱用 <td background="quiz/x.jpg"> 铺图，没有 <img>。
+        const bgRe = /background\s*=\s*["']([^"']+\.(?:jpe?g|png|gif|webp))["']/gi
+        let bg
+        while ((bg = bgRe.exec(zone))) {
+          if (PLACEHOLDER_IMG.test(bg[1])) continue
+          const abs = anySiteHref(bg[1], pageUrl)
+          if (abs) found = abs
+        }
+        if (found) return found
+      }
+      return ''
+    })()
+    // 题干说明若写在表单外，往往连着「上传量/下载量」这类账号数据：
+    // 只发题目与选项是不够的，但也绝不能把账号信息送给 AI，所以表单外文字一律不取。
+    const block = textOf(inner.slice(0, picked[0].start)).replace(/\s+/g, ' ').trim()
     return {
-      question: lastQuestion(textOf(inner.slice(0, picked[0].start))),
+      question: lastQuestion(block),
+      // 题干区块的完整文字：描述句常常在问句前面（「他是两弹元勋，请问他是谁？」），
+      // 只留最后一句会把线索丢干净，AI 自然只能回「无法确定」。
+      context: block.slice(-300),
       options,
       fields,
       url,
       method,
+      image,
       label: submitLabel || '提交',
     }
   }
   return null
+}
+
+// 整页里的图片地址（只取 URL，不下载、不保存图片内容）。
+// 用于「题目明显该配图却找不到图」时给用户/日志一个线索：题目图可能不在表单内，
+// 而是摆在表单上方的独立区块里。
+// NexusPHP 常拿 pic/trans.gif 当占位图（真实图片地址另放在 style/data-* 里），
+// 这类图和站点小图标、等级条、表情都不是题干图，喂给 AI 只会得到一句「无法确定」。
+const PLACEHOLDER_IMG = /(?:trans\.gif|spacer|blank\.gif|pixel|loading\.(?:gif|png)|smilies|emoticon|\/icons?\/|\/styles\/|level_|star_)/i
+export function pageImageCandidates(html, pageUrl, limit = 6) {
+  const source = String(html || '').slice(0, MAX_HTML)
+  if (!source.trim()) return []
+  const out = []
+  const re = /<img\b([^>]*)>/gi
+  let m
+  while ((m = re.exec(source)) && out.length < limit) {
+    const src = attrValue(m[1], 'src') || attrValue(m[1], 'data-src')
+    if (!src || /^data:/i.test(src)) continue
+    if (/\b(?:width|height)\s*=\s*["']?1\b/i.test(m[1])) continue
+    // 站点图标/表情/等级条之类的小图没有题干价值。
+    if (PLACEHOLDER_IMG.test(src)) continue
+    const abs = sameSiteHref(src, pageUrl)
+    if (abs && !out.includes(abs)) out.push(abs)
+  }
+  return out
+}
+
+// 只抽图片相关线索（img 标签属性 + CSS background 里的 url），不导出页面正文。
+// 答题页把图放在 style/data-* 或 CSS 背景里时，靠这些线索才能定位真正的题干图。
+export function quizImageHints(html, pageUrl, limit = 4) {
+  const source = String(html || '').slice(0, MAX_HTML)
+  if (!source.trim()) return []
+  const out = []
+  const imgRe = /<img\b([^>]*)>/gi
+  let m
+  while ((m = imgRe.exec(source)) && out.length < limit) {
+    const attrs = m[1]
+    const src = attrValue(attrs, 'src') || ''
+    const style = attrValue(attrs, 'style') || ''
+    const bg = /url\(\s*['"]?([^'")]+)['"]?\s*\)/i.exec(style)
+    const bgUrl = bg ? bg[1] : ''
+    const real = attrValue(attrs, 'data-src') || attrValue(attrs, 'data-original') || bgUrl || ''
+    // 只有占位图本身、且没有任何真实地址的标签，才没有线索价值。
+    if (!real && PLACEHOLDER_IMG.test(src)) continue
+    const parts = []
+    if (src) parts.push('src=' + src)
+    if (real && real !== src) parts.push('real=' + real)
+    const cls = attrValue(attrs, 'class')
+    if (cls) parts.push('class=' + cls)
+    const abs = anySiteHref(real || src, pageUrl) || real || src
+    out.push(abs)
+  }
+  // 除 img 之外，老皮肤还用 <td background="..."> / CSS url(...) 铺题干图。
+  const bgRe = /(?:background\s*=\s*["']([^"']+\.(?:jpe?g|png|gif|webp))["']|url\(\s*['"]?([^'")]+\.(?:jpe?g|png|gif|webp))['"]?\s*\))/gi
+  let bg
+  while ((bg = bgRe.exec(source)) && out.length < limit) {
+    const pick = bg[1] || bg[2]
+    if (!pick || PLACEHOLDER_IMG.test(pick)) continue
+    const abs = anySiteHref(pick, pageUrl)
+    if (abs && !out.includes(abs)) out.push(abs)
+  }
+  return out
 }
 
 // 题库文本：一行一条「题目关键词 = 答案」，关键词可用 | 或逗号分隔多个。
@@ -776,17 +1143,32 @@ function normKey(value) {
 export function pickQuizOption(options, answer) {
   const raw = String(answer || '').trim()
   if (!raw || !Array.isArray(options) || !options.length) return null
+  // 纯序号优先：「3」「3.」「第3个」这类最不容易误判。
+  const num = /^[#\s]*第?\s*(\d{1,2})\s*(?:[.、)）个]|选项)?\s*$/.exec(raw)
+  if (num) {
+    const index = Number(num[1]) - 1
+    if (index >= 0 && index < options.length) return options[index]
+  }
+  if (/^[a-h]$/i.test(raw)) {
+    const index = raw.toUpperCase().charCodeAt(0) - 65
+    if (index >= 0 && index < options.length) return options[index]
+  }
   const target = normKey(raw)
-  let index = -1
-  if (/^\d+$/.test(raw)) index = Number(raw) - 1
-  else if (/^[a-h]$/i.test(raw)) index = raw.toUpperCase().charCodeAt(0) - 65
-  if (index >= 0 && index < options.length) return options[index]
-  const exact = options.find(item => normKey(item.label) === target)
-  if (exact) return exact
-  return options.find(item => {
-    const label = normKey(item.label)
-    return label && target && (label.includes(target) || target.includes(label))
-  }) || null
+  if (target) {
+    const exact = options.find(item => normKey(item.label) === target)
+    if (exact) return exact
+    const partial = options.find(item => {
+      const label = normKey(item.label)
+      return label && (label.includes(target) || target.includes(label))
+    })
+    if (partial) return partial
+  }
+  // 答案本身是符号（「.」「*」）：normKey 会把符号清空，按原文包含再比一次。
+  if (raw.length <= 2) {
+    const symbol = options.find(item => String(item.label).includes(raw))
+    if (symbol) return symbol
+  }
+  return null
 }
 
 // 用题库匹配题目：多条命中取关键词最长的那条（更精确），答案再落到具体选项上。
@@ -907,24 +1289,52 @@ export function judge(response, site) {
   if (underChallenge(raw, headers)) {
     return { status: 'failed', detail: '被 Cloudflare 拦截：需要宿主已配置渲染器（FlareSolverr 等）并在站点里开启兜底' }
   }
-  if (hasLoginForm(raw)) return { status: 'failed', detail: 'Cookie 已失效，需重新登录后复制新 Cookie' }
+  if (hasLoginForm(raw)) {
+    return {
+      status: 'failed',
+      detail: loginNeedsTwoFactor(raw)
+        ? 'Cookie 已失效；该站登录需要密码 + 6 位动态码（2FA），请在浏览器登录完成后用「从 CookieCloud 同步」取回最新 Cookie'
+        : 'Cookie 已失效，需重新登录后复制新 Cookie',
+    }
+  }
   // 被踹回登录页（可能是 JS 渲染的登录页，没有 password 输入框）：凭据没送到，别再往下判。
   if (loginRedirected(response)) {
     return { status: 'failed', detail: 'Cookie 已失效（站点跳转到登录页）' }
+  }
+
+  // 页面上还挂着 Turnstile 组件 = 人机验证还没做、表单还没提交，签到根本没发生。
+  // 这类页面正文常写「签到」「连续签到」甚至成功关键词，先拦下来，别报假成功。
+  if (hasTurnstile(raw) && /data-sitekey\s*=\s*["'][^"']+["']/i.test(raw)) {
+    return { status: 'unconfirmed', detail: '页面仍在等人机验证（Turnstile），签到尚未完成' }
   }
 
   const text = visibleText(raw)
   // 用户关键词只是「页面文字命中」，不是站点回执。签到页导航、统计、说明里常含
   // 「已签到」「连续签到」「签到成功」这类字样，此时真正的签到按钮仍摆着没点。
   // 必须先排除这种「按钮还在」的情况，否则会报假成功、永不点击，站点那头什么都没发生。
-  const actionPending = hasSignAction(raw)
+  const actionPending = hasSignAction(raw, response.url || site.url)
   const already = includesAny(text, site.alreadyKeywords || [])
   if (already && !actionPending) return { status: 'already', detail: already }
 
   if (SIGNIN_NEGATIVE.test(text.replace(/\s+/g, ''))) {
     return { status: 'failed', detail: '站点返回签到失败提示' }
   }
-  if (alreadySigned(raw) && !actionPending) return { status: 'already', detail: '站点显示今日已签到' }
+  // 「您今天已经签到过了」是站点自述的当日状态，比「页面上还挂着签到入口」更可信：
+  // NexusPHP 顶部导航永远有「每日签到」，用它压制 already 会让已签的站永远报待确认。
+  // 它也必须排在答题回执之前：已签的答题页仍会把题目和规则摆出来。
+  if (alreadySigned(raw)) {
+    const hit = ALREADY_TEXT.exec(text) || ALREADY_TEXT.exec(text.replace(/\s+/g, ''))
+    return { status: 'already', detail: hit ? `站点显示今日已签到：${String(hit[0]).slice(0, 40)}` : '站点显示今日已签到' }
+  }
+  // 答题站的完成回执是「回答正确」，不等于「签到成功」，但确实是拿到了签到结果。
+  // 页面若还摆着选项（radio），说明题还没答完，此时的「回答正确」只是规则说明，不能当回执。
+  // 规则段落里同样会出现这四个字（「不会却回答正确额外获得5魔力值」），句子带规则词的一律不算回执。
+  const stillQuiz = /<input\b[^>]*\btype\s*=\s*["']?radio/i.test(raw)
+  const quizSentence = (text.match(/[^。！!？?\n]{0,12}(?:(?:回答|答案)(?:正确|正確)|答对了|答對了)[^。！!？?\n]{0,30}/) || [''])[0]
+  const quizRight = quizSentence && !/(?:额外|額外|用户|用戶|扣|规则|規則|说明|說明)/.test(quizSentence)
+    ? quizSentence.trim()
+    : ''
+  if (quizRight && !actionPending && !stillQuiz) return { status: 'success', detail: `答题通过：${quizRight.slice(0, 40)}` }
   const success = includesAny(text, site.successKeywords || [])
   if (success && !actionPending) return { status: 'success', detail: success }
 
@@ -935,6 +1345,42 @@ export function judge(response, site) {
   if (!hasLoginEvidence(raw)) return { status: 'failed', detail: '未识别到登录状态，Cookie 可能已失效' }
   if (status >= 300) return { status: 'unconfirmed', detail: `HTTP ${status}，已登录但未见到签到回执` }
   return { status: 'unconfirmed', detail: '已登录，但页面无签到完成回执' }
+}
+
+// ===== JSON 接口签到（蜂巢这类 Next.js 新框架站）=====
+// 这类站点没有 HTML 签到页：页面上点「立即签到」是网页 JS 去 POST 一个 JSON 接口，
+// GET 首页拿到的只是前端壳子，永远读不到回执。接口地址与请求体由用户为该站点填写，
+// 必须与站点同域；Cookie 仍只发往站点自己，不碰其它域名。
+export function parseJsonBody(raw) {
+  const text = typeof raw === 'string' ? raw.trim() : ''
+  if (!text || (text[0] !== '{' && text[0] !== '[')) return null
+  try { return JSON.parse(text) } catch { return null }
+}
+
+// 取嵌套字段：'data.surface.checkedInToday' → payload.data.surface.checkedInToday
+export function jsonPathGet(value, path) {
+  const key = String(path || '').trim()
+  if (!key) return undefined
+  return key.split('.').reduce((acc, part) => (acc == null ? undefined : acc[part]), value)
+}
+
+// 按接口返回判签到结果：先看 HTTP 与业务 code，再看「今天已签到」标记。
+// 站点通常返回 {code:0,message:'签到成功',data:{alreadyCheckedIn:false}}。
+export function judgeJsonSignin(payload, status) {
+  const httpStatus = Number(status) || 0
+  const code = Number(payload?.code)
+  const message = String(payload?.message || '').trim()
+  if (httpStatus === 401 || code === 401) {
+    return { status: 'failed', detail: '接口返回未登录：Cookie 已失效，请重新登录后用「从 CookieCloud 同步」取回' }
+  }
+  if (httpStatus >= 400) return { status: 'failed', detail: message || `接口返回 HTTP ${httpStatus}` }
+  if (Number.isFinite(code) && code !== 0) {
+    return { status: 'failed', detail: message || `接口返回错误码 ${code}` }
+  }
+  if (payload?.data?.alreadyCheckedIn === true) {
+    return { status: 'already', detail: message || '今天已经签到过' }
+  }
+  return { status: 'success', detail: message || '接口返回签到成功' }
 }
 
 // 连续签到天数：从今天（或最近有记录的一天）向前累计有成功/already 记录的日期。

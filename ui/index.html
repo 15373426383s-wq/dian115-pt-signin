@@ -95,6 +95,7 @@
         <div class="section-head">
           <div><h2 id="sites-title">我的站点</h2><p>管理站点、查看状态、随时补签</p></div>
           <div class="head-actions">
+            <button class="btn btn-ghost btn-sm" id="cloud-sync" type="button">从 CookieCloud 同步</button>
             <button class="btn btn-ghost btn-sm" id="bulk-cookie" type="button">批量贴 Cookie</button>
             <span class="count-badge" id="sites-count">0</span>
           </div>
@@ -184,8 +185,21 @@
           <label class="field switch-field"><span>启用站点</span><input type="checkbox" id="f-enabled" checked><i class="toggle"></i></label>
         </div>
         <label class="field"><span>Cookie（可选）</span><textarea id="f-cookie" rows="2" placeholder="从浏览器复制的该站点 Cookie；留空表示不修改"></textarea><small>只保存于本插件，签到时仅发往该站点，不会出现在日志里</small></label>
+        <label class="toggle-row"><span><strong>使用 CookieCloud 的 Cookie（推荐）</strong><small>优先用宿主 CookieCloud 里该站点域名的最新 Cookie，读不到时自动回退到上面手填的。Cookie 只按站点域名读取，仍只发往该站点本身；关掉则只用手填的</small></span><input type="checkbox" id="f-cloud" checked><i class="toggle"></i></label>
         <label class="field"><span>User-Agent（可选）</span><input id="f-ua" maxlength="300" placeholder="与获取 Cookie 时同一浏览器，例如 Mozilla/5.0 (Windows NT 10.0; Win64; x64) ..."><small>站点按 UA 绑定会话时必填；留空使用插件内置 UA。可从浏览器 Network 面板同一请求里复制</small></label>
+        <label class="field"><span>二次验证密钥 TOTP（可选，杜比这类开了 2FA 的站点填）</span><input id="f-totp" maxlength="200" autocomplete="off" spellcheck="false" placeholder="站点绑定 2FA 时给出的 base32 密钥，例如 JBSWY3DPEHPK3PXP"><small>站点开启两步验证后，签到页会先跳到 6 位动态码表单。填了密钥，插件就在本机按 RFC 6238 算出当前的码交给该站点，自动过验证再签到。<b>密钥只保存在本插件，不外发、不进日志</b>；留空则遇到 2FA 站点直接判人工</small></label>
         <label class="toggle-row"><span><strong>Cloudflare 兜底（一般不用开）</strong><small>只有直连被 Cloudflare 拦时才需要：让宿主渲染器过盾再判一次。宿主没配渲染器（FlareSolverr 等）时这一步必然失败，插件会自动回到直连结论，不会再让签到失败</small></span><input type="checkbox" id="f-render"><i class="toggle"></i></label>
+        <details class="adv" id="api-box">
+          <summary>JSON 接口签到（蜂巢这类新框架站，可选）</summary>
+          <div class="adv-body">
+            <label class="toggle-row"><span><strong>用 JSON 接口签到</strong><small>站点没有 HTML 签到页，点「立即签到」其实是网页 JS 调一个 JSON 接口。开启后插件直接调这个接口，不再按页面判（否则永远「待确认」）。接口地址必须与站点同域</small></span><input type="checkbox" id="f-api"><i class="toggle"></i></label>
+            <button class="btn btn-secondary adv-preset" id="f-api-preset" type="button">填入蜂巢（fengchao.chat）的接口</button>
+            <label class="field"><span>签到接口（POST）</span><input id="f-api-url" spellcheck="false" placeholder="https://fengchao.chat/api/check-in"></label>
+            <label class="field"><span>请求体 JSON（可选）</span><input id="f-api-body" spellcheck="false" placeholder='{"action":"check-in"}'><small>留空用 <b>{"action":"check-in"}</b>；只有站点接口要求别的字段时才改</small></label>
+            <label class="field"><span>状态接口（GET，可选）</span><input id="f-api-status" spellcheck="false" placeholder="https://fengchao.chat/api/（站点自己的状态接口）"><small>填了就先查「今天签没签」，已签就不再重复提交；诊断也用它，且只读不写</small></label>
+            <label class="field"><span>已签到字段路径</span><input id="f-api-path" spellcheck="false" placeholder="data.surface.checkedInToday"><small>状态接口 JSON 里表示「今天已签到」的布尔字段，用点号分层；留空默认 data.surface.checkedInToday</small></label>
+          </div>
+        </details>
         <label class="field"><span>答题库（可选，留空就行）</span><textarea id="f-bank" rows="3" spellcheck="false" placeholder="想省 AI 调用时可以自己加：&#10;蜻蜓点水 = 产卵&#10;一甲子是多少年 = 60年"></textarea><small>一行一条：<b>题目关键词 = 答案</b>。留空也能签：题库没命中时交给宿主 AI 作答，答对的题会自动记进这里（下次同题不再花 token）。<b>图形验证码（HDSKY 这类）无法识别</b>，插件会在通知里给你签到页按钮，手动点一下即可。</small></label>
         <label class="toggle-row"><span><strong>答题交给宿主 AI</strong><small>题库没命中时，把题目与选项交给宿主已配置的 AI 选答案，你不用自己维护题库。只发题目文字，不带 Cookie/账号；宿主没配 AI 时自动跳过，改为把题目发通知给你</small></span><input type="checkbox" id="f-ai" checked><i class="toggle"></i></label>
         <label class="field"><span>成功关键词（可选）</span><input id="f-success" placeholder="签到成功,连续签到,已获得"><small>命中页面可见文字即判成功；留空也会自动识别 NexusPHP 标准回执（含英文模板与「您今天已经签到过了」）</small></label>

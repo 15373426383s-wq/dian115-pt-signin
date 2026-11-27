@@ -112,13 +112,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .l1 { background: rgba(109,139,255,.28); }
 .l2 { background: rgba(109,139,255,.55); }
 .l3 { background: rgba(109,139,255,.9); }
-/* 紧凑版日历：与「最近记录」并排，卡片只有 280px 宽，格子按卡宽均分（约 29px），不再拉满整行 */
-.split { display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 20px; }
-.split > .panel { margin-top: 0; }
-.calendar-panel .panel-head { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+/* 日历与「最近记录」并排：适当加宽日历列，让格子更大、整块更饱满，与右侧长列表视觉平衡 */
+/* 两列等高：日历与「最近记录」同高，记录多时右侧内部滚动，避免一长一短 */
+.split { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 16px; align-items: stretch; grid-auto-rows: 440px; margin-top: 20px; }
+.split > .panel { margin-top: 0; display: flex; flex-direction: column; min-height: 0; }
+.calendar-panel .panel-head { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 14px; flex: none; }
 .calendar-panel .panel-head p { margin: 0; }
-.heatmap { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
-.heat-cell { aspect-ratio: 1; border-radius: 7px; background: var(--bg); border: 1px solid var(--border); display: grid; place-items: center; font-size: 10px; font-variant-numeric: tabular-nums; color: var(--muted); position: relative; transition: transform .15s; }
+.heatmap { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 6px; flex: 1; min-height: 0; }
+.heat-cell { border-radius: 8px; background: var(--bg); border: 1px solid var(--border); display: grid; place-items: center; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); position: relative; transition: transform .15s; }
 .heat-cell:hover { transform: scale(1.15); z-index: 2; }
 .heat-cell.l1 { background: rgba(109,139,255,.28); border-color: transparent; color: var(--text); }
 .heat-cell.l2 { background: rgba(109,139,255,.55); border-color: transparent; color: #fff; }
@@ -181,6 +182,9 @@ input:checked + .toggle::after { transform: translateX(14px); }
 
 /* ---------- 时间线 ---------- */
 .timeline { list-style: none; margin: 0; padding: 0; }
+.timeline-panel .timeline { flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px; }
+.timeline-panel .timeline::-webkit-scrollbar { width: 6px; }
+.timeline-panel .timeline::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 .timeline li { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .timeline li:last-child { border-bottom: 0; }
 .tl-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
@@ -211,6 +215,15 @@ input:checked + .toggle::after { transform: translateX(14px); }
 .modal-head h2 { margin: 0; font-size: 16px; }
 .modal-body { padding: 20px 22px; }
 .modal-body .toggle-row { margin-bottom: 15px; }
+/* JSON 接口签到：折叠区，普通站点不用展开 */
+.adv { border: 1px solid var(--border); border-radius: 13px; background: var(--bg); padding: 0 15px; margin-bottom: 15px; }
+.adv > summary { cursor: pointer; padding: 13px 0; font-size: 13px; font-weight: 600; list-style: none; }
+.adv > summary::-webkit-details-marker { display: none; }
+.adv > summary::before { content: '▸'; display: inline-block; margin-right: 8px; color: var(--muted); transition: transform .15s; }
+.adv[open] > summary::before { transform: rotate(90deg); }
+.adv-body { padding-bottom: 1px; }
+.adv .toggle-row { background: var(--surface); }
+.adv-preset { width: 100%; margin-bottom: 15px; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 15px; }
 .field > span { font-size: 12px; font-weight: 600; }
 .field > span b { color: var(--red); }
@@ -292,8 +305,12 @@ input:checked + .toggle::after { transform: translateX(14px); }
 }
 
 @media (max-width: 780px) {
-  /* 单列时日历卡限宽，避免格子又跟着整行变胖 */
-  .split { grid-template-columns: minmax(0, 1fr); gap: 14px; }
-  .split > .calendar-panel { max-width: 330px; }
+  /* 单列时日历卡限宽，避免格子又跟着整行变胖；也不该再锁固定行高 */
+  .split { grid-template-columns: minmax(0, 1fr); gap: 14px; grid-auto-rows: auto; }
+  .split > .panel { max-height: none; }
+  .split > .calendar-panel { max-width: 420px; }
+  .heatmap { grid-auto-rows: auto; }
+  .heat-cell { aspect-ratio: 1; }
+  .timeline-panel .timeline { overflow: visible; }
   .calendar-panel .panel-head { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 }
